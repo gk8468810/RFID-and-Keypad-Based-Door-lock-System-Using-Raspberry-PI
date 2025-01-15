@@ -1,0 +1,33 @@
+from machine import Pin, SPI
+import mfrc522
+import time
+
+# Define SPI and MFRC522 Pins
+sck = Pin(10, Pin.OUT)
+mosi = Pin(11, Pin.OUT)
+miso = Pin(12, Pin.IN)
+cs = Pin(13, Pin.OUT)
+rst = Pin(15, Pin.OUT)
+
+# Initialize SPI and MFRC522
+spi = SPI(0, baudrate=1000000, polarity=0, phase=0, sck=sck, mosi=mosi, miso=miso)
+rfid = mfrc522.MFRC522(spi, cs, rst)
+
+print("Place the RFID card near the reader...")
+
+while True:
+    # Check for a card
+    (status, tag_type) = rfid.request(rfid.REQIDL)
+    if status == rfid.OK:
+        print("Card detected!")
+
+        # Get the card's unique ID (UID)
+        (status, uid) = rfid.anticoll()
+        if status == rfid.OK:
+            # Display the UID of the card
+            card_uid = "UID: " + " ".join([hex(i) for i in uid])
+            print(card_uid)
+
+            # Wait before the next read
+            time.sleep(1)
+
