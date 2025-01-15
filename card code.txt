@@ -1,0 +1,135 @@
+card: 890040451
+round card: 3700257907
+
+from machine import Pin, I2C, PWM, SPI
+from lcd_api import LcdApi
+from i2c_lcd import I2cLcd
+from mfrc522 import MFRC522
+import utime
+
+# Keypad pin configuration
+rows = [Pin(0, Pin.OUT), Pin(1, Pin.OUT), Pin(2, Pin.OUT), Pin(3, Pin.OUT)]
+cols = [Pin(6, Pin.IN, Pin.PULL_DOWN), Pin(7, Pin.IN, Pin.PULL_DOWN), Pin(8, Pin.IN, Pin.PULL_DOWN)]
+
+# Keypad layout (4x3)
+keys = [
+    ['1', '2', '3'],
+    ['4', '5', '6'],
+    ['7', '8', '9'],
+    ['*', '0', '#']
+]
+
+# Pin configuration for buzzer, LEDs, and servo
+buzzer = Pin(20, Pin.OUT)
+red_led = Pin(12, Pin.OUT)
+green_led = Pin(17, Pin.OUT)
+servo = PWM(Pin(15))
+servo.freq(50)
+
+# Initialize I2C for LCD
+i2c = I2C(0, sda=Pin(4), scl=Pin(5), freq=400000)
+lcd = I2cLcd(i2c, 0x26, 2, 16)
+
+# Initialize SPI for RFID
+rfid = MFRC522(spi_id=0,sck=18,miso=16,mosi=19,cs=13,rst=11)
+
+# Pre-defined RFID UID and passcode
+valid_uid = [0xDE, 0xAD, 0xBE, 0xEF]
+correct_passcode = "4567"
+
+# Servo motor positions
+LOCKED_POS = 0
+UNLOCKED_POS = 110
+
+def set_servo_angle(angle):
+    duty = int((angle / 180) * 6000 + 2000)
+    servo.duty_u16(duty)
+
+def lock_door():
+    set_servo_angle(LOCKED_POS)
+    lcd.clear()
+    lcd.putstr("DOOR LOCKED")
+
+def unlock_door():
+    set_servo_angle(UNLOCKED_POS)
+    green_led.on()
+    lcd.clear()
+    lcd.putstr("DOOR UNLOCKED")
+    utime.sleep(5)
+    green_led.off()
+    lock_door()
+
+def read_rfid():
+    rfid.init()
+    (stat, tag_type) = rfid.request(rfid.REQIDL)
+    if stat == rfid.OK:
+        (stat, uid) = rfid.SelectTagSN()
+        if stat == rfid.OK:
+            card = int.from_bytes(bytes(uid),"little",False)
+            return card
+    return None
+
+def check_passcode():
+    lcd.clear()
+    lcd.putstr("Enter Passcode:")
+    entered_passcode = ""
+    while len(entered_passcode) < 4:
+        key = read_keypad()
+        if key:
+            entered_passcode += key
+            lcd.putstr("*")
+    char_key = read_keypad()
+    if char_key and char_key.isalpha():
+        entered_passcode += char_key
+        lcd.putstr("*") 
+    return correct_passcode == entered_passcode
+
+def read_keypad():
+    """Scan the keypad and return the pressed key."""
+    for row in range(4):
+        # Set current row to HIGH
+        rows[row].on()
+        for col in range(3):
+            if cols[col].value() == 1:
+                # Debounce delay
+                utime.sleep(0.2)
+                # Reset row to LOW
+                rows[row].off()
+                return keys[row][col]
+        # Reset row to LOW
+        rows[row].off()
+    return None
+
+def alert():
+    buzzer.on()
+    red_led.on()
+    utime.sleep(2)
+    buzzer.off()
+    red_led.off()
+
+# Main program loop
+lock_door()
+utime.sleep(1)
+lcd.clear()
+lcd.putstr("Scan the Card")
+
+while True:
+    uid = read_rfid()
+    if uid:
+        if uid == 890040451:
+            lcd.clear()
+            lcd.putstr("Enter Passcode:")
+            if check_passcode():
+                unlock_door()
+            else:
+                lcd.clear()
+                lcd.putstr("Incorrect Passcode")
+                alert()
+        else:
+            lcd.clear()
+            lcd.putstr("Invalid Card")
+            alert()
+        utime.sleep(2)
+        lcd.clear()
+        lcd.putstr("Scan the Card")
+
